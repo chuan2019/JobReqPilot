@@ -8,7 +8,8 @@
 5. [Summarize Flow](#5-summarize-flow)
 6. [Semantic Scoring Design](#6-semantic-scoring-design)
 7. [Project Directory Structure](#7-project-directory-structure)
-8. [Key Technology Decisions](#8-key-technology-decisions)
+8. [Docker Compose Deployment](#8-docker-compose-deployment)
+9. [Key Technology Decisions](#9-key-technology-decisions)
 
 ---
 
@@ -23,11 +24,11 @@ C4Context
     System(jobreqpilot, "JobReqPilot", "Web application that uses MCP agents\nto search and summarize job postings")
 
     System_Ext(internet, "Internet / Job Boards", "LinkedIn, Indeed, Google Jobs,\nGlassdoor, etc.")
-    System_Ext(llm, "LLM Provider", "Claude / OpenAI\n(text generation & embeddings)")
+    System(ollama, "Ollama", "Locally hosted LLM server\n(text generation & embeddings)")
 
-    Rel(user, jobreqpilot, "Uses", "HTTPS")
+    Rel(user, jobreqpilot, "Uses", "HTTP (local)")
     Rel(jobreqpilot, internet, "Searches via MCP tools", "HTTP")
-    Rel(jobreqpilot, llm, "Calls for reasoning & embeddings", "HTTPS")
+    Rel(jobreqpilot, ollama, "Calls for reasoning & embeddings", "HTTP (local)")
 ```
 
 ---
@@ -62,7 +63,14 @@ flowchart TB
 
     subgraph External["External Services"]
         JobBoards["Job Boards\n(LinkedIn, Indeed, Google Jobs)"]
-        LLM["LLM API\n(Claude)"]
+    end
+
+    subgraph Ollama["Ollama (local Docker service)"]
+        OllamaAPI["Ollama REST API\n:11434"]
+        LLMModel["LLM Model\n(e.g. qwen2.5, mistral)"]
+        EmbedModel["Embedding Model\n(e.g. nomic-embed-text)"]
+        OllamaAPI --> LLMModel
+        OllamaAPI --> EmbedModel
     end
 
     UI -->|POST /search| API
@@ -75,9 +83,9 @@ flowchart TB
     SummarizeAgent --> Embedder
     WebSearch --> JobBoards
     Scraper --> JobBoards
-    Embedder --> LLM
-    SummarizeAgent --> LLM
-    ScoreEngine --> LLM
+    Embedder --> OllamaAPI
+    SummarizeAgent --> OllamaAPI
+    ScoreEngine --> OllamaAPI
     Orchestrator --> ScoreEngine
     ScoreEngine --> Cache
     Cache --> API
@@ -139,15 +147,15 @@ sequenceDiagram
     participant API as FastAPI
     participant Orch as Orchestrator
     participant SearchMCP as Job Search MCP Server
-    participant LLM as Claude LLM
+    participant Ollama as Ollama (local)
     participant Web as Job Boards
 
     User->>UI: Fill form & click Search
     UI->>API: POST /api/v1/search\n{title, category, keywords, date_range}
     API->>Orch: search(request)
     Orch->>SearchMCP: call tool: build_query(inputs)
-    SearchMCP->>LLM: Generate optimized boolean search query
-    LLM-->>SearchMCP: query string
+    SearchMCP->>Ollama: Generate optimized boolean search query
+    Ollama-->>SearchMCP: query string
     SearchMCP-->>Orch: structured query
     loop For each job board (LinkedIn, Indeed, Google Jobs)
         Orch->>SearchMCP: call tool: search_jobs(query, board, date_filter)
@@ -159,8 +167,8 @@ sequenceDiagram
     SearchMCP->>Web: Fetch full JD pages
     Web-->>SearchMCP: raw HTML / text
     SearchMCP-->>Orch: parsed JD texts
-    Orch->>LLM: embed(user_query)
-    Orch->>LLM: embed(each JD text)
+    Orch->>Ollama: embed(user_query) via nomic-embed-text
+    Orch->>Ollama: embed(each JD text) via nomic-embed-text
     Note over Orch: cosine_similarity(query_vec, jd_vec)\n→ match_score ∈ [0,1]
     Orch-->>API: top-100 jobs sorted by score
     API-->>UI: JSON job list
@@ -178,17 +186,17 @@ sequenceDiagram
     participant API as FastAPI
     participant Orch as Orchestrator
     participant SumMCP as Summarize MCP Server
-    participant LLM as Claude LLM
+    participant Ollama as Ollama (local)
 
     User->>UI: Click "Summarize Requirements"
     UI->>API: POST /api/v1/summarize\n{job_ids[] from current results}
     API->>Orch: summarize(job_ids)
     Orch->>SumMCP: call tool: aggregate_jds(jd_texts[])
     Note over SumMCP: Chunk & deduplicate JD content
-    SumMCP->>LLM: Extract structured requirements\nfrom each chunk
-    LLM-->>SumMCP: per-chunk requirements JSON
-    SumMCP->>LLM: Merge & rank requirements\nacross all chunks
-    LLM-->>SumMCP: final ranked requirements
+    SumMCP->>Ollama: Extract structured requirements\nfrom each chunk
+    Ollama-->>SumMCP: per-chunk requirements JSON
+    SumMCP->>Ollama: Merge & rank requirements\nacross all chunks
+    Ollama-->>SumMCP: final ranked requirements
     SumMCP-->>Orch: RequirementsSummary
     Orch-->>API: summary payload
     API-->>UI: JSON summary
@@ -208,9 +216,9 @@ flowchart LR
         JD["Job Description\nfull text"]
     end
 
-    subgraph Embedding["Embedding Layer (Claude / OpenAI)"]
-        QEmb["embed(query)\n→ vector ℝ¹⁵³⁶"]
-        JDEmb["embed(jd)\n→ vector ℝ¹⁵³⁶"]
+    subgraph Embedding["Embedding Layer (Ollama / nomic-embed-text)"]
+        QEmb["embed(query)\n→ vector ℝ⁷⁶⁸"]
+        JDEmb["embed(jd)\n→ vector ℝ⁷⁶⁸"]
     end
 
     subgraph Score["Scoring"]
@@ -230,6 +238,7 @@ flowchart LR
 ### Scoring Formula
 
 ```
+# embed() calls Ollama's nomic-embed-text model at http://ollama:11434/api/embeddings
 base_score  = cosine_similarity(embed(query), embed(jd))   # ∈ [0, 1]
 title_boost = 0.05 if job_title contains query_title (case-insensitive)
 kw_boost    = 0.03 × min(matched_keywords / total_keywords, 1.0)
@@ -260,6 +269,7 @@ JobReqPilot/
 │   │       └── index.ts
 │   ├── index.html
 │   ├── vite.config.ts
+│   ├── Dockerfile
 │   └── package.json
 │
 ├── backend/                         # FastAPI
@@ -276,36 +286,108 @@ JobReqPilot/
 │   │   │   └── scorer.py            # Embedding + cosine similarity
 │   │   └── main.py                  # FastAPI app entry point
 │   ├── pyproject.toml
-│   └── .env.example
+│   ├── Dockerfile
+│   └── .env.example                 # OLLAMA_BASE_URL, SERPAPI_KEY, etc.
 │
 ├── mcp-servers/
 │   ├── job-search/                  # MCP Server 1 — Job Search
 │   │   ├── server.py                # MCP server entry point
+│   │   ├── Dockerfile
 │   │   └── tools/
 │   │       ├── build_query.py       # LLM-powered boolean query builder
 │   │       ├── search_jobs.py       # Multi-board job search
 │   │       └── scrape_jd.py         # JD page scraper & parser
 │   └── summarize/                   # MCP Server 2 — Summarization
 │       ├── server.py
+│       ├── Dockerfile
 │       └── tools/
 │           ├── aggregate_jds.py     # Chunk & deduplicate JD content
 │           └── extract_requirements.py  # LLM-powered requirement extraction
 │
-├── docker-compose.yml
-└── ARCHITECTURE.md
+├── docker-compose.yml               # Orchestrates all services + Ollama
+├── docker-compose.override.yml      # Dev overrides (hot-reload, port bindings)
+├── .env.example                     # Top-level env template
+└── docs/
+    └── ARCHITECTURE.md
 ```
 
 ---
 
-## 8. Key Technology Decisions
+## 8. Docker Compose Deployment
+
+All services run as containers in a shared Docker Compose network (`jobreqpilot_net`). Ollama is included as a service so no external API keys or cloud LLM access are required.
+
+```mermaid
+flowchart TB
+    subgraph DC["docker-compose.yml"]
+        FE_C["frontend\n:3000\n(Vite / Nginx)"]
+        BE_C["backend\n:8000\n(FastAPI + Uvicorn)"]
+        JS_C["mcp-job-search\n:8001\n(MCP SSE Server)"]
+        SUM_C["mcp-summarize\n:8002\n(MCP SSE Server)"]
+        REDIS["redis\n:6379"]
+        OLL["ollama\n:11434\n(GPU-enabled if available)"]
+    end
+
+    FE_C -->|HTTP :8000| BE_C
+    BE_C -->|MCP SSE :8001| JS_C
+    BE_C -->|MCP SSE :8002| SUM_C
+    BE_C -->|cache| REDIS
+    JS_C -->|/api/generate\n/api/embeddings| OLL
+    SUM_C -->|/api/generate\n/api/embeddings| OLL
+    BE_C -->|/api/embeddings| OLL
+```
+
+### Service Summary
+
+| Service | Image | Ports | Purpose |
+|---|---|---|---|
+| `frontend` | `jobreqpilot/frontend` | `3000` | React UI (Nginx in prod, Vite HMR in dev) |
+| `backend` | `jobreqpilot/backend` | `8000` | FastAPI REST API + orchestrator |
+| `mcp-job-search` | `jobreqpilot/mcp-job-search` | `8001` | Job Search MCP Server (SSE transport) |
+| `mcp-summarize` | `jobreqpilot/mcp-summarize` | `8002` | Summarize MCP Server (SSE transport) |
+| `redis` | `redis:7-alpine` | `6379` | Result & embedding cache |
+| `ollama` | `ollama/ollama` | `11434` | Local LLM inference server |
+
+### Environment Variables (`.env`)
+
+```dotenv
+# Ollama
+OLLAMA_BASE_URL=http://ollama:11434
+OLLAMA_LLM_MODEL=qwen2.5:14b          # or mistral, llama3.2, etc.
+OLLAMA_EMBED_MODEL=nomic-embed-text
+
+# External
+SERPAPI_KEY=<your-key>
+
+# Redis
+REDIS_URL=redis://redis:6379/0
+```
+
+### Ollama Model Pull (first run)
+
+```bash
+# Pull required models on first start (runs inside the ollama container)
+docker compose run --rm ollama ollama pull qwen2.5:14b
+docker compose run --rm ollama ollama pull nomic-embed-text
+```
+
+### Dev vs Prod
+
+- **Dev** (`docker compose up`): uses `docker-compose.override.yml` — mounts source dirs as volumes for hot-reload, exposes all ports on localhost.
+- **Prod** (`docker compose -f docker-compose.yml up`): no volume mounts, Nginx serves the built React bundle, only port `3000` exposed externally.
+
+---
+
+## 9. Key Technology Decisions
 
 | Concern | Choice | Rationale |
 |---|---|---|
-| **MCP transport** | stdio (dev) / SSE (prod) | stdio is simple locally; SSE allows horizontal scaling |
-| **LLM** | Claude claude-sonnet-4-6 | Best tool-use & long-context support (needed for 100 JDs) |
-| **Embeddings** | `text-embedding-3-large` (OpenAI) or Claude embeddings | 1536-dim vectors; best-in-class semantic retrieval accuracy |
+| **MCP transport** | SSE (Docker service-to-service) | Services communicate over the internal Docker network; SSE is stateless and horizontally scalable |
+| **LLM** | Ollama — `qwen2.5:14b` (default) | Runs fully locally via Docker; no API key required; swappable via `OLLAMA_LLM_MODEL` env var |
+| **Embeddings** | Ollama — `nomic-embed-text` (768-dim) | State-of-the-art open-source embedding model; runs locally via the same Ollama container |
 | **Scoring** | Cosine similarity on dense embeddings + lightweight heuristic boosts | Industry standard; interpretable; fast at inference time |
 | **Frontend state** | React Query (server state) + Zustand (UI state) | React Query handles caching & background refetch; Zustand is minimal |
 | **Job board access** | SerpAPI / Bright Data or direct scraping via MCP tool | SerpAPI gives structured results with legal compliance |
-| **Backend cache** | Redis (prod) / in-memory dict (dev) | Avoids re-embedding identical queries; TTL-based invalidation |
+| **Backend cache** | Redis (Docker service) | Avoids re-embedding identical queries; TTL-based invalidation; same service in dev and prod |
 | **API style** | REST with SSE streaming for long-running searches | Simple to consume from React; streaming gives progressive UX |
+| **Deployment** | Docker Compose | Single `docker compose up` starts the full stack including Ollama; no cloud dependencies |
