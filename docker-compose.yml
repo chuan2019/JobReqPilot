@@ -111,6 +111,23 @@ services:
     networks:
       - jobreqpilot
 
+  # ---------------------------------------------------------------------------
+  # Frontend — React UI (Nginx in prod, Vite HMR in dev)
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      target: production
+    container_name: jobreqpilot-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - jobreqpilot
+
 volumes:
   ollama_data:
   redis_data:
