@@ -1,0 +1,72 @@
+# =============================================================================
+# JobReqPilot — Docker Compose Override (dev)
+# Automatically loaded by `docker compose up`.
+# Adds dev-friendly settings: exposed ports, volume mounts, hot-reload.
+#
+# For production, run:
+#   docker compose -f docker-compose.yml up
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Ollama — expose port on localhost for direct testing
+  # (already exposed in base, but override lets us add dev-only env vars)
+  # ---------------------------------------------------------------------------
+  ollama:
+    environment:
+      - OLLAMA_DEBUG=1
+
+  # ---------------------------------------------------------------------------
+  # Redis — expose port on localhost for redis-cli debugging
+  # ---------------------------------------------------------------------------
+  redis:
+    ports:
+      - "6379:6379"
+
+  # ---------------------------------------------------------------------------
+  # Placeholder services below will be uncommented as they are implemented
+  # in later phases. Kept here to show the intended dev configuration.
+  # ---------------------------------------------------------------------------
+
+  # backend:
+  #   build:
+  #     context: ./backend
+  #   ports:
+  #     - "8000:8000"
+  #   volumes:
+  #     - ./backend/app:/app/app    # hot-reload via uvicorn --reload
+  #   environment:
+  #     - LOG_LEVEL=debug
+  #   env_file:
+  #     - .env
+
+  # mcp-job-search:
+  #   build:
+  #     context: ./mcp-servers/job-search
+  #   ports:
+  #     - "8001:8001"
+  #   volumes:
+  #     - ./mcp-servers/job-search:/app
+  #   env_file:
+  #     - .env
+
+  # mcp-summarize:
+  #   build:
+  #     context: ./mcp-servers/summarize
+  #   ports:
+  #     - "8002:8002"
+  #   volumes:
+  #     - ./mcp-servers/summarize:/app
+  #   env_file:
+  #     - .env
+
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     target: dev
+  #   ports:
+  #     - "3000:3000"
+  #   volumes:
+  #     - ./frontend/src:/app/src    # Vite HMR
+  #   environment:
+  #     - NODE_ENV=development

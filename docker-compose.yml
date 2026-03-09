@@ -1,0 +1,62 @@
+# =============================================================================
+# JobReqPilot — Docker Compose (base)
+# Phase 1: Ollama + Redis only. Application services added in later phases.
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Ollama — local LLM inference server
+  # ---------------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    container_name: jobreqpilot-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    networks:
+      - jobreqpilot
+
+  # ---------------------------------------------------------------------------
+  # Redis — result & embedding cache
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: jobreqpilot-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - jobreqpilot
+
+volumes:
+  ollama_data:
+  redis_data:
+
+networks:
+  jobreqpilot:
+    driver: bridge
