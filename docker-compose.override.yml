@@ -50,13 +50,14 @@ services:
   #   env_file:
   #     - .env
 
-  # frontend:
-  #   build:
-  #     context: ./frontend
-  #     target: dev
-  #   ports:
-  #     - "3000:3000"
-  #   volumes:
-  #     - ./frontend/src:/app/src    # Vite HMR
-  #   environment:
-  #     - NODE_ENV=development
+  frontend:
+    build:
+      context: ./frontend
+      target: dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/index.html:/app/index.html
+    environment:
+      - NODE_ENV=development
