@@ -40,15 +40,10 @@ services:
   #   env_file:
   #     - .env
 
-  # mcp-job-search:
-  #   build:
-  #     context: ./mcp-servers/job-search
-  #   ports:
-  #     - "8001:8001"
-  #   volumes:
-  #     - ./mcp-servers/job-search:/app
-  #   env_file:
-  #     - .env
+  mcp-job-search:
+    volumes:
+      - ./mcp-servers/job-search/server.py:/app/server.py
+      - ./mcp-servers/job-search/tools:/app/tools
 
   # mcp-summarize:
   #   build:

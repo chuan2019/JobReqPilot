@@ -1,6 +1,5 @@
 # =============================================================================
 # JobReqPilot — Docker Compose (base)
-# Phase 1: Ollama + Redis only. Application services added in later phases.
 # =============================================================================
 
 services:
@@ -50,6 +49,30 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - jobreqpilot
+
+  # ---------------------------------------------------------------------------
+  # MCP Server — Job Search
+  # ---------------------------------------------------------------------------
+  mcp-job-search:
+    build:
+      context: ./mcp-servers/job-search
+    container_name: jobreqpilot-mcp-job-search
+    ports:
+      - "8001:8001"
+    environment:
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8001
+      - MCP_TRANSPORT=sse
+      - SERPAPI_KEY=${SERPAPI_KEY:-}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8001/sse || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     networks:
       - jobreqpilot
 
