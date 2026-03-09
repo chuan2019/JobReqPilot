@@ -54,10 +54,11 @@ services:
     build:
       context: ./frontend
       target: dev
-    ports:
+    ports: !override
       - "3000:3000"
     volumes:
       - ./frontend/src:/app/src
       - ./frontend/index.html:/app/index.html
     environment:
       - NODE_ENV=development
+      - VITE_API_PROXY_TARGET=http://backend:8000
