@@ -2,7 +2,7 @@
 
 Exposes three tools over SSE transport:
   - build_query:  Generate an optimized search query from user inputs
-  - search_jobs:  Search job boards via SerpAPI
+  - search_jobs:  Search job boards via Tavily Search API
   - scrape_jd:    Scrape and parse job description pages
 """
 

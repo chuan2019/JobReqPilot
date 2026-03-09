@@ -1,17 +1,37 @@
-"""search_jobs tool — searches job boards via SerpAPI.
+"""search_jobs tool — searches job boards via Tavily Search API.
 
-Supports Google Jobs as the primary engine. Returns structured job listings
+Uses Tavily's web search to find job listings. Returns structured job listings
 with title, company, URL, snippet, and date posted.
 """
 
 import json
 import os
+import re
 
 import httpx
 
 from mcp.server.fastmcp import Context, FastMCP
 
-SERPAPI_BASE_URL = "https://serpapi.com/search"
+TAVILY_API_URL = "https://api.tavily.com/search"
+
+# Job board domains to prioritize in search results
+JOB_BOARD_DOMAINS = [
+    "linkedin.com",
+    "indeed.com",
+    "glassdoor.com",
+    "lever.co",
+    "greenhouse.io",
+    "workday.com",
+    "careers.google.com",
+    "jobs.apple.com",
+    "ziprecruiter.com",
+    "monster.com",
+    "dice.com",
+    "simplyhired.com",
+    "builtin.com",
+    "angel.co",
+    "wellfound.com",
+]
 
 
 def register_tools(server: FastMCP) -> None:
@@ -29,57 +49,65 @@ def register_tools(server: FastMCP) -> None:
             query: Boolean search query string (from build_query tool)
             location: Geographic location filter (e.g. "San Francisco, CA")
             date_filter: Recency filter — "day", "3days", "week", "month", or ""
-            max_results: Maximum number of results to return (default 20, max 100)
+            max_results: Maximum number of results to return (default 20, max 20)
 
         Returns:
             JSON array of job objects with: title, company, url, snippet, date_posted, source
         """
-        max_results = min(max_results, 100)
-        serpapi_key = os.getenv("SERPAPI_KEY", "")
+        max_results = min(max_results, 20)
+        tavily_key = os.getenv("TAVILY_API_KEY", "")
 
-        if not serpapi_key:
+        if not tavily_key:
             if ctx:
-                ctx.warning("SERPAPI_KEY not set — returning mock results for development")
+                ctx.warning("TAVILY_API_KEY not set — returning mock results for development")
             return _mock_results(query, max_results)
 
-        # Map date_filter to SerpAPI's chips parameter
-        date_chip = _date_filter_to_chip(date_filter)
-
-        params = {
-            "engine": "google_jobs",
-            "q": query,
-            "api_key": serpapi_key,
-            "num": str(max_results),
-        }
+        # Build the search query with job-related context
+        search_query = f"job posting {query}"
         if location:
-            params["location"] = location
-        if date_chip:
-            params["chips"] = date_chip
+            search_query += f" {location}"
+
+        time_range = _date_filter_to_time_range(date_filter)
+
+        payload = {
+            "query": search_query,
+            "search_depth": "advanced",
+            "max_results": max_results,
+            "include_domains": JOB_BOARD_DOMAINS,
+        }
+        if time_range:
+            payload["time_range"] = time_range
+
+        headers = {
+            "Authorization": f"Bearer {tavily_key}",
+            "Content-Type": "application/json",
+        }
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(SERPAPI_BASE_URL, params=params)
+                response = await client.post(
+                    TAVILY_API_URL, json=payload, headers=headers
+                )
                 response.raise_for_status()
                 data = response.json()
         except httpx.HTTPError as e:
-            error_msg = f"SerpAPI request failed: {e}"
+            error_msg = f"Tavily API request failed: {e}"
             if ctx:
                 ctx.error(error_msg)
             return json.dumps({"error": error_msg, "jobs": []})
 
         jobs = []
-        for item in data.get("jobs_results", [])[:max_results]:
+        for item in data.get("results", []):
+            title, company = _parse_title_company(item.get("title", ""))
             jobs.append(
                 {
-                    "title": item.get("title", ""),
-                    "company": item.get("company_name", ""),
-                    "url": _extract_apply_link(item),
-                    "snippet": item.get("description", "")[:500],
-                    "date_posted": item.get("detected_extensions", {}).get(
-                        "posted_at", ""
-                    ),
-                    "source": item.get("via", "Google Jobs"),
-                    "location": item.get("location", ""),
+                    "title": title,
+                    "company": company,
+                    "url": item.get("url", ""),
+                    "snippet": (item.get("content", "") or "")[:500],
+                    "date_posted": "",
+                    "source": _extract_source(item.get("url", "")),
+                    "location": location,
                 }
             )
 
@@ -89,30 +117,69 @@ def register_tools(server: FastMCP) -> None:
         return json.dumps(jobs)
 
 
-def _date_filter_to_chip(date_filter: str) -> str:
-    """Convert a human-readable date filter to SerpAPI chips parameter."""
+def _date_filter_to_time_range(date_filter: str) -> str:
+    """Convert a human-readable date filter to Tavily time_range parameter."""
     mapping = {
-        "day": "date_posted:today",
-        "3days": "date_posted:3days",
-        "week": "date_posted:week",
-        "month": "date_posted:month",
+        "day": "day",
+        "3days": "week",
+        "week": "week",
+        "month": "month",
     }
-    return mapping.get(date_filter.lower(), "")
+    return mapping.get(date_filter.lower(), "") if date_filter else ""
 
 
-def _extract_apply_link(item: dict) -> str:
-    """Extract the best apply link from a SerpAPI job result."""
-    apply_options = item.get("apply_options", [])
-    if apply_options:
-        return apply_options[0].get("link", "")
-    related = item.get("related_links", [])
-    if related:
-        return related[0].get("link", "")
-    return ""
+def _parse_title_company(raw_title: str) -> tuple[str, str]:
+    """Extract job title and company from a search result title.
+
+    Common patterns:
+      "Senior Engineer - Company Name"
+      "Senior Engineer at Company Name"
+      "Senior Engineer | Company Name"
+      "Company Name is hiring Senior Engineer"
+    """
+    # Pattern: "Company is hiring Title"
+    hiring_match = re.match(r"^(.+?)\s+is hiring\s+(.+?)(?:\s*[|\-].*)?$", raw_title, re.IGNORECASE)
+    if hiring_match:
+        return hiring_match.group(2).strip(), hiring_match.group(1).strip()
+
+    # Pattern: "Title at/- /| Company"
+    for sep in [" at ", " - ", " | ", " — ", " · "]:
+        if sep in raw_title:
+            parts = raw_title.split(sep, 1)
+            return parts[0].strip(), parts[1].strip()
+
+    return raw_title.strip(), ""
+
+
+def _extract_source(url: str) -> str:
+    """Extract a human-readable source name from a URL."""
+    if not url:
+        return "Unknown"
+    match = re.search(r"https?://(?:www\.)?([^/]+)", url)
+    if match:
+        domain = match.group(1)
+        # Map common domains to friendly names
+        domain_names = {
+            "linkedin.com": "LinkedIn",
+            "indeed.com": "Indeed",
+            "glassdoor.com": "Glassdoor",
+            "lever.co": "Lever",
+            "greenhouse.io": "Greenhouse",
+            "ziprecruiter.com": "ZipRecruiter",
+            "monster.com": "Monster",
+            "dice.com": "Dice",
+            "builtin.com": "Built In",
+            "wellfound.com": "Wellfound",
+        }
+        for key, name in domain_names.items():
+            if key in domain:
+                return name
+        return domain
+    return "Unknown"
 
 
 def _mock_results(query: str, max_results: int) -> str:
-    """Return mock job results for development without a SerpAPI key."""
+    """Return mock job results for development without a Tavily API key."""
     mock_jobs = [
         {
             "title": "Senior Software Engineer",

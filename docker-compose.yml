@@ -65,7 +65,7 @@ services:
       - MCP_HOST=0.0.0.0
       - MCP_PORT=8001
       - MCP_TRANSPORT=sse
-      - SERPAPI_KEY=${SERPAPI_KEY:-}
+      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import httpx; httpx.get('http://localhost:8001/sse', timeout=3)\""]
