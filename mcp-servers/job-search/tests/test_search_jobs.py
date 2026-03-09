@@ -2,54 +2,78 @@
 
 import json
 
-import httpx
 import pytest
-import respx
 
-from tools.search_jobs import _date_filter_to_chip, _extract_apply_link, _mock_results
+from tools.search_jobs import (
+    _date_filter_to_time_range,
+    _extract_source,
+    _mock_results,
+    _parse_title_company,
+)
 
 
-class TestDateFilterToChip:
+class TestDateFilterToTimeRange:
     def test_day(self):
-        assert _date_filter_to_chip("day") == "date_posted:today"
+        assert _date_filter_to_time_range("day") == "day"
 
     def test_week(self):
-        assert _date_filter_to_chip("week") == "date_posted:week"
+        assert _date_filter_to_time_range("week") == "week"
 
     def test_month(self):
-        assert _date_filter_to_chip("month") == "date_posted:month"
+        assert _date_filter_to_time_range("month") == "month"
 
-    def test_3days(self):
-        assert _date_filter_to_chip("3days") == "date_posted:3days"
+    def test_3days_maps_to_week(self):
+        assert _date_filter_to_time_range("3days") == "week"
 
     def test_empty(self):
-        assert _date_filter_to_chip("") == ""
+        assert _date_filter_to_time_range("") == ""
 
     def test_case_insensitive(self):
-        assert _date_filter_to_chip("DAY") == "date_posted:today"
+        assert _date_filter_to_time_range("DAY") == "day"
 
     def test_unknown(self):
-        assert _date_filter_to_chip("year") == ""
+        assert _date_filter_to_time_range("year") == ""
 
 
-class TestExtractApplyLink:
-    def test_with_apply_options(self):
-        item = {"apply_options": [{"link": "https://example.com/apply"}]}
-        assert _extract_apply_link(item) == "https://example.com/apply"
+class TestParseTitleCompany:
+    def test_dash_separator(self):
+        title, company = _parse_title_company("Senior Engineer - Google")
+        assert title == "Senior Engineer"
+        assert company == "Google"
 
-    def test_with_related_links(self):
-        item = {"related_links": [{"link": "https://example.com/related"}]}
-        assert _extract_apply_link(item) == "https://example.com/related"
+    def test_at_separator(self):
+        title, company = _parse_title_company("Backend Developer at Meta")
+        assert title == "Backend Developer"
+        assert company == "Meta"
 
-    def test_no_links(self):
-        assert _extract_apply_link({}) == ""
+    def test_pipe_separator(self):
+        title, company = _parse_title_company("Data Scientist | Amazon")
+        assert title == "Data Scientist"
+        assert company == "Amazon"
 
-    def test_apply_options_preferred(self):
-        item = {
-            "apply_options": [{"link": "https://apply.com"}],
-            "related_links": [{"link": "https://related.com"}],
-        }
-        assert _extract_apply_link(item) == "https://apply.com"
+    def test_is_hiring_pattern(self):
+        title, company = _parse_title_company("Netflix is hiring Senior Engineer")
+        assert title == "Senior Engineer"
+        assert company == "Netflix"
+
+    def test_no_separator(self):
+        title, company = _parse_title_company("Software Engineer")
+        assert title == "Software Engineer"
+        assert company == ""
+
+
+class TestExtractSource:
+    def test_linkedin(self):
+        assert _extract_source("https://www.linkedin.com/jobs/view/123") == "LinkedIn"
+
+    def test_indeed(self):
+        assert _extract_source("https://indeed.com/viewjob?jk=abc") == "Indeed"
+
+    def test_unknown_domain(self):
+        assert _extract_source("https://customjobs.example.com/123") == "customjobs.example.com"
+
+    def test_empty_url(self):
+        assert _extract_source("") == "Unknown"
 
 
 class TestMockResults:
