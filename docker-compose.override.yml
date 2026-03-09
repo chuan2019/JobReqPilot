@@ -28,17 +28,12 @@ services:
   # in later phases. Kept here to show the intended dev configuration.
   # ---------------------------------------------------------------------------
 
-  # backend:
-  #   build:
-  #     context: ./backend
-  #   ports:
-  #     - "8000:8000"
-  #   volumes:
-  #     - ./backend/app:/app/app    # hot-reload via uvicorn --reload
-  #   environment:
-  #     - LOG_LEVEL=debug
-  #   env_file:
-  #     - .env
+  backend:
+    volumes:
+      - ./backend/app:/app/app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    environment:
+      - LOG_LEVEL=debug
 
   mcp-job-search:
     volumes:
