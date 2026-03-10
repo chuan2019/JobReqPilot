@@ -1,8 +1,8 @@
 """MCP Orchestrator — connects to MCP servers and coordinates tool calls.
 
-Acts as the MCP host/client. Connects to the job-search MCP server over SSE,
-calls tools in sequence, and handles sampling requests by forwarding them
-to the Ollama client.
+Acts as the MCP host/client. Connects to the job-search and summarize MCP
+servers over SSE, calls tools in sequence, and handles sampling requests by
+forwarding them to the Ollama client.
 """
 
 import json
@@ -14,17 +14,19 @@ from mcp.client.sse import sse_client
 from mcp.types import TextContent
 
 from app.models.search import JobResult, SearchRequest
+from app.models.summarize import RequirementsSummary
 from app.services.ollama_client import OllamaClient
 
 logger = logging.getLogger(__name__)
 
 
 class OrchestratorService:
-    """Coordinates MCP tool calls for the search flow."""
+    """Coordinates MCP tool calls for the search and summarize flows."""
 
     def __init__(self, ollama: OllamaClient):
         self.ollama = ollama
         self.job_search_url = os.getenv("MCP_JOB_SEARCH_URL", "http://mcp-job-search:8001")
+        self.summarize_url = os.getenv("MCP_SUMMARIZE_URL", "http://mcp-summarize:8002")
 
     async def search(self, request: SearchRequest) -> tuple[list[JobResult], str]:
         """Execute the full search flow via MCP tools.
@@ -146,6 +148,70 @@ class OrchestratorService:
                 )
             )
         return jobs
+
+
+    async def summarize(self, jd_texts: list[str]) -> RequirementsSummary:
+        """Execute the summarize flow via MCP tools.
+
+        Connects to the summarize MCP server, aggregates JD texts,
+        then extracts and ranks requirements.
+
+        Args:
+            jd_texts: List of job description texts to analyze.
+
+        Returns:
+            RequirementsSummary with ranked requirements across categories.
+        """
+        sse_url = f"{self.summarize_url}/sse"
+
+        async with sse_client(sse_url) as (read_stream, write_stream):
+            async with ClientSession(read_stream, write_stream) as session:
+                await session.initialize()
+
+                # Step 1: Aggregate and deduplicate JD texts
+                chunks = await self._aggregate_jds(session, jd_texts)
+
+                if not chunks:
+                    return RequirementsSummary()
+
+                # Step 2: Extract and rank requirements
+                summary = await self._extract_requirements(session, chunks)
+                return summary
+
+    async def _aggregate_jds(
+        self, session: ClientSession, jd_texts: list[str]
+    ) -> list[str]:
+        """Call the aggregate_jds MCP tool."""
+        try:
+            result = await session.call_tool(
+                "aggregate_jds",
+                arguments={"jd_texts": jd_texts},
+            )
+            text = _extract_text(result)
+            data = json.loads(text)
+
+            # Extract chunk texts from the response
+            chunks = data.get("chunks", [])
+            return [c["text"] for c in chunks if c.get("text")]
+        except Exception as e:
+            logger.error("aggregate_jds tool failed: %s", e)
+            return []
+
+    async def _extract_requirements(
+        self, session: ClientSession, chunks: list[str]
+    ) -> RequirementsSummary:
+        """Call the extract_requirements MCP tool."""
+        try:
+            result = await session.call_tool(
+                "extract_requirements",
+                arguments={"chunks": chunks},
+            )
+            text = _extract_text(result)
+            data = json.loads(text)
+            return RequirementsSummary(**data)
+        except Exception as e:
+            logger.error("extract_requirements tool failed: %s", e)
+            return RequirementsSummary()
 
 
 def _extract_text(result) -> str:
