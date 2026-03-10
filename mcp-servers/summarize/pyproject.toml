@@ -1,20 +1,17 @@
 [project]
-name = "jobreqpilot-mcp-job-search"
+name = "jobreqpilot-mcp-summarize"
 version = "0.1.0"
-description = "MCP server for job search — build queries, search job boards, and scrape job descriptions"
+description = "MCP server for aggregating and summarizing job description requirements"
 requires-python = ">=3.11"
 dependencies = [
     "mcp[cli]>=1.0.0",
     "httpx>=0.27.0",
-    "beautifulsoup4>=4.12.0",
-    "lxml>=5.0.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
-    "respx>=0.22.0",
 ]
 
 [build-system]

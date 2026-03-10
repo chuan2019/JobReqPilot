@@ -77,6 +77,29 @@ services:
       - jobreqpilot
 
   # ---------------------------------------------------------------------------
+  # MCP Server — Summarize
+  # ---------------------------------------------------------------------------
+  mcp-summarize:
+    build:
+      context: ./mcp-servers/summarize
+    container_name: jobreqpilot-mcp-summarize
+    ports:
+      - "8002:8002"
+    environment:
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8002
+      - MCP_TRANSPORT=sse
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import httpx; httpx.get('http://localhost:8002/sse', timeout=3)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - jobreqpilot
+
+  # ---------------------------------------------------------------------------
   # Backend — FastAPI REST API + orchestrator
   # ---------------------------------------------------------------------------
   backend:
@@ -100,6 +123,8 @@ services:
       redis:
         condition: service_healthy
       mcp-job-search:
+        condition: service_started
+      mcp-summarize:
         condition: service_started
     restart: unless-stopped
     healthcheck:
