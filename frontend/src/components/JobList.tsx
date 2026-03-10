@@ -7,12 +7,14 @@ interface JobListProps {
   jobs: JobResult[]
   queryUsed: string
   cached: boolean
+  onSummarize: (jobIds: string[]) => void
+  isSummarizing: boolean
 }
 
 type SortField = 'match_score' | 'title' | 'date_posted' | 'company'
 type SortDir = 'asc' | 'desc'
 
-export function JobList({ jobs, queryUsed, cached }: JobListProps) {
+export function JobList({ jobs, queryUsed, cached, onSummarize, isSummarizing }: JobListProps) {
   const [sortField, setSortField] = useState<SortField>('match_score')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const { selectedJobs, clearSelection } = useJobStore()
@@ -56,6 +58,13 @@ export function JobList({ jobs, queryUsed, cached }: JobListProps) {
         {selectedJobs.size > 0 && (
           <div className="selection-info">
             <span>{selectedJobs.size} selected</span>
+            <button
+              className="btn-primary btn-small"
+              onClick={() => onSummarize([...selectedJobs])}
+              disabled={isSummarizing}
+            >
+              {isSummarizing ? 'Summarizing...' : 'Summarize Selected'}
+            </button>
             <button className="btn-secondary btn-small" onClick={clearSelection}>
               Clear
             </button>

@@ -28,3 +28,31 @@ export interface SearchResponse {
   query_used: string
   cached: boolean
 }
+
+/** Mirrors backend SummarizeRequest Pydantic model. */
+export interface SummarizeRequest {
+  job_ids: string[]
+}
+
+/** Mirrors backend RequirementItem Pydantic model. */
+export interface RequirementItem {
+  name: string
+  frequency: number
+}
+
+/** Mirrors backend RequirementsSummary Pydantic model. */
+export interface RequirementsSummary {
+  technical_skills: RequirementItem[]
+  soft_skills: RequirementItem[]
+  education: RequirementItem[]
+  certifications: RequirementItem[]
+  experience: RequirementItem[]
+  total_chunks_analyzed: number
+}
+
+/** Mirrors backend SummarizeResponse Pydantic model. */
+export interface SummarizeResponse {
+  summary: RequirementsSummary
+  job_count: number
+  cached: boolean
+}

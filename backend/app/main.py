@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1 import search as search_router
+from app.api.v1 import summarize as summarize_router
 from app.services.cache import CacheService
 from app.services.ollama_client import OllamaClient
 from app.services.orchestrator import OrchestratorService
@@ -64,6 +65,7 @@ app.add_middleware(
 
 # Register API routes
 app.include_router(search_router.router, prefix="/api/v1")
+app.include_router(summarize_router.router, prefix="/api/v1")
 
 
 @app.get("/health")
