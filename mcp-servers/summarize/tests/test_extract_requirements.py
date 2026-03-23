@@ -5,6 +5,7 @@ import json
 import pytest
 
 from tools.extract_requirements import (
+    _extract_sampling_text,
     _heuristic_extract,
     _merge_extractions,
     _parse_json_response,
@@ -164,3 +165,23 @@ class TestMergeExtractions:
         # Should merge into one entry with frequency 2
         assert len(result["technical_skills"]) == 1
         assert result["technical_skills"][0]["frequency"] == 2
+
+
+class _DummyText:
+    def __init__(self, text: str):
+        self.text = text
+
+
+class _DummyResult:
+    def __init__(self, content):
+        self.content = content
+
+
+class TestExtractSamplingText:
+    def test_extracts_text_from_content_object(self):
+        result = _DummyResult(_DummyText('{"key": "value"}'))
+        assert _extract_sampling_text(result) == '{"key": "value"}'
+
+    def test_extracts_text_from_string_content(self):
+        result = _DummyResult('{"key": "value"}')
+        assert _extract_sampling_text(result) == '{"key": "value"}'

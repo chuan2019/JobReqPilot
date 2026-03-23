@@ -54,7 +54,7 @@ def register_tools(server: FastMCP) -> None:
         Returns:
             JSON array of job objects with: title, company, url, snippet, date_posted, source
         """
-        max_results = min(max_results, 20)
+        max_results = max(1, min(max_results, 20))
         tavily_key = os.getenv("TAVILY_API_KEY", "")
 
         if not tavily_key:
@@ -172,7 +172,7 @@ def _extract_source(url: str) -> str:
             "wellfound.com": "Wellfound",
         }
         for key, name in domain_names.items():
-            if key in domain:
+            if domain == key or domain.endswith(f".{key}"):
                 return name
         return domain
     return "Unknown"

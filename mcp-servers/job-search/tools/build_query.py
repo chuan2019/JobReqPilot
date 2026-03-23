@@ -5,8 +5,10 @@ keeping this server fully model-agnostic.
 """
 
 import json
+from typing import Optional
 
 from mcp.server.fastmcp import Context, FastMCP
+import mcp.types as types
 
 
 def register_tools(server: FastMCP) -> None:
@@ -15,7 +17,7 @@ def register_tools(server: FastMCP) -> None:
         title: str,
         category: str = "",
         keywords: list[str] | None = None,
-        ctx: Context = None,
+        ctx: Optional[Context] = None,
     ) -> str:
         """Build an optimized boolean search query for job boards.
 
@@ -45,29 +47,37 @@ def register_tools(server: FastMCP) -> None:
             f'"excluded_terms": ["intern", "internship"]}}'
         )
 
-        # Use MCP sampling — delegates the LLM call to the host/orchestrator.
-        # If sampling is not available, fall back to a simple heuristic query.
-        try:
-            result = await ctx.session.create_message(
-                messages=[
-                    {
-                        "role": "user",
-                        "content": {"type": "text", "text": prompt},
-                    }
-                ],
-                max_tokens=512,
-            )
-            # Extract text from the sampling result
-            if hasattr(result, "content"):
-                if isinstance(result.content, str):
-                    return result.content
-                if hasattr(result.content, "text"):
-                    return result.content.text
-            return str(result)
-        except Exception as e:
-            if ctx:
+        # Use MCP sampling when a session is available; otherwise use heuristics.
+        if ctx and getattr(ctx, "session", None):
+            try:
+                messages = [
+                    types.SamplingMessage(
+                        role="user",
+                        content=types.TextContent(type="text", text=prompt),
+                    )
+                ]
+                result = await ctx.session.create_message(
+                    messages=messages,
+                    max_tokens=512,
+                )
+                sampled = _extract_sampling_text(result)
+                if sampled:
+                    return sampled
+            except Exception as e:
                 ctx.info(f"Sampling unavailable ({e}), using heuristic query builder")
-            return _heuristic_query(title, category, kw_list)
+
+        return _heuristic_query(title, category, kw_list)
+
+
+def _extract_sampling_text(result: object) -> str:
+    """Extract text from MCP sampling result content."""
+    content = getattr(result, "content", None)
+    if isinstance(content, str):
+        return content
+    text = getattr(content, "text", None)
+    if isinstance(text, str):
+        return text
+    return str(result or "")
 
 
 def _heuristic_query(

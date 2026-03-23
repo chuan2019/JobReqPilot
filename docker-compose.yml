@@ -24,7 +24,8 @@ services:
               capabilities: [gpu]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      # The Ollama image does not include curl/wget; use the built-in CLI probe.
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -68,7 +69,8 @@ services:
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import httpx; httpx.get('http://localhost:8001/sse', timeout=3)\""]
+      # /sse is a streaming endpoint; probe TCP readiness instead of full response read.
+      test: ["CMD-SHELL", "python -c \"import socket; s=socket.create_connection(('localhost', 8001), 3); s.close()\""]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -91,7 +93,8 @@ services:
       - MCP_TRANSPORT=sse
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import httpx; httpx.get('http://localhost:8002/sse', timeout=3)\""]
+      # /sse is a streaming endpoint; probe TCP readiness instead of full response read.
+      test: ["CMD-SHELL", "python -c \"import socket; s=socket.create_connection(('localhost', 8002), 3); s.close()\""]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -119,7 +122,7 @@ services:
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
     depends_on:
       ollama:
-        condition: service_started
+        condition: service_healthy
       redis:
         condition: service_healthy
       mcp-job-search:

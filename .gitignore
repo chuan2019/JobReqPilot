@@ -219,3 +219,7 @@ __marimo__/
 frontend/node_modules/
 frontend/build/
 frontend/dist/
+
+# Workspace/config folders
+.github/
+.vscode/

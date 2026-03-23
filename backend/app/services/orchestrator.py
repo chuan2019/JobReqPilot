@@ -64,14 +64,18 @@ class OrchestratorService:
                     "keywords": request.keywords,
                 },
             )
+            logger.debug("build_query tool result: %s", result)
             text = _extract_text(result)
+            logger.debug("build_query tool returned: %s", text)
 
             # Try to parse as JSON and extract the query field
             try:
                 data = json.loads(text)
                 if isinstance(data, dict) and "query" in data:
+                    logger.debug("build_query tool returned JSON: %s", data)
                     return data["query"]
             except json.JSONDecodeError:
+                logger.exception("build_query tool returned non-JSON text: %s", text)
                 pass
 
             return text
