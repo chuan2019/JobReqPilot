@@ -107,10 +107,3 @@ See [.env.example](.env.example) for all configuration options. Key variables:
 - **LLM**: Ollama (llama3.2 + nomic-embed-text)
 - **Infrastructure**: Docker Compose, Redis, Nginx
 
-## Documentation
-
-Detailed phase documentation is available in [docs/JobReqPilot/](docs/JobReqPilot/):
-
-- [Architecture](docs/JobReqPilot/ARCHITECTURE.md)
-- [Implementation Plan](docs/JobReqPilot/implementation-plan.md)
-- Phase docs: [Phase 2](docs/JobReqPilot/phase2-mcp-job-search.md) | [Phase 3](docs/JobReqPilot/phase3-backend-search.md) | [Phase 4](docs/JobReqPilot/phase4-frontend-search-ui.md) | [Phase 5](docs/JobReqPilot/phase5-mcp-summarize.md) | [Phase 6](docs/JobReqPilot/phase6-summarize-flow.md)
