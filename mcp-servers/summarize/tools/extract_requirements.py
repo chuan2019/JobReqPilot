@@ -6,8 +6,10 @@ then merges and ranks requirements across all chunks.
 """
 
 import json
+from typing import Optional
 
 from mcp.server.fastmcp import Context, FastMCP
+import mcp.types as types
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +192,7 @@ def register_tools(server: FastMCP) -> None:
     @server.tool()
     async def extract_requirements(
         chunks: list[str],
-        ctx: Context = None,
+        ctx: Optional[Context] = None,
     ) -> str:
         """Extract and rank structured requirements from job description chunks.
 
@@ -223,7 +225,7 @@ def register_tools(server: FastMCP) -> None:
             })
 
         per_chunk_extractions: list[dict] = []
-        use_sampling = True
+        use_sampling = bool(ctx and getattr(ctx, "session", None))
 
         # Step 1: Extract requirements from each chunk
         for chunk_text in chunks:
@@ -235,20 +237,15 @@ def register_tools(server: FastMCP) -> None:
                     prompt = EXTRACT_PROMPT.format(jd_text=chunk_text)
                     result = await ctx.session.create_message(
                         messages=[
-                            {
-                                "role": "user",
-                                "content": {"type": "text", "text": prompt},
-                            }
+                            types.SamplingMessage(
+                                role="user",
+                                content=types.TextContent(type="text", text=prompt),
+                            )
                         ],
                         max_tokens=1024,
                     )
 
-                    response_text = ""
-                    if hasattr(result, "content"):
-                        if isinstance(result.content, str):
-                            response_text = result.content
-                        elif hasattr(result.content, "text"):
-                            response_text = result.content.text
+                    response_text = _extract_sampling_text(result)
 
                     parsed = _parse_json_response(response_text)
                     if parsed:
@@ -293,20 +290,15 @@ def register_tools(server: FastMCP) -> None:
                 )
                 result = await ctx.session.create_message(
                     messages=[
-                        {
-                            "role": "user",
-                            "content": {"type": "text", "text": merge_prompt},
-                        }
+                        types.SamplingMessage(
+                            role="user",
+                            content=types.TextContent(type="text", text=merge_prompt),
+                        )
                     ],
                     max_tokens=2048,
                 )
 
-                response_text = ""
-                if hasattr(result, "content"):
-                    if isinstance(result.content, str):
-                        response_text = result.content
-                    elif hasattr(result.content, "text"):
-                        response_text = result.content.text
+                response_text = _extract_sampling_text(result)
 
                 parsed = _parse_json_response(response_text)
                 if parsed:
@@ -327,3 +319,14 @@ def register_tools(server: FastMCP) -> None:
             per_chunk_extractions, len(per_chunk_extractions)
         )
         return json.dumps(merged)
+
+
+def _extract_sampling_text(result: object) -> str:
+    """Extract text from MCP sampling result content."""
+    content = getattr(result, "content", None)
+    if isinstance(content, str):
+        return content
+    text = getattr(content, "text", None)
+    if isinstance(text, str):
+        return text
+    return str(result or "")

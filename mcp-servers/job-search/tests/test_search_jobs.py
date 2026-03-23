@@ -75,6 +75,9 @@ class TestExtractSource:
     def test_empty_url(self):
         assert _extract_source("") == "Unknown"
 
+    def test_does_not_match_partial_domain(self):
+        assert _extract_source("https://notlinkedin.com/jobs/view/123") == "notlinkedin.com"
+
 
 class TestMockResults:
     def test_returns_list(self):

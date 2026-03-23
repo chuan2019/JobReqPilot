@@ -5,6 +5,7 @@ import json
 import pytest
 
 from tools.build_query import _heuristic_query
+from tools.build_query import _extract_sampling_text
 
 
 class TestHeuristicQuery:
@@ -51,3 +52,23 @@ class TestHeuristicQuery:
         assert "query" in result
         assert "title_variants" in result
         assert "excluded_terms" in result
+
+
+class _DummyText:
+    def __init__(self, text: str):
+        self.text = text
+
+
+class _DummyResult:
+    def __init__(self, content):
+        self.content = content
+
+
+class TestExtractSamplingText:
+    def test_extracts_text_from_content_object(self):
+        result = _DummyResult(_DummyText('{"query": "x"}'))
+        assert _extract_sampling_text(result) == '{"query": "x"}'
+
+    def test_extracts_text_when_content_is_string(self):
+        result = _DummyResult('{"query": "x"}')
+        assert _extract_sampling_text(result) == '{"query": "x"}'

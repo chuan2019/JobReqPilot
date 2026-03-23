@@ -2,9 +2,11 @@
 
 Handles text generation (/api/generate) and embeddings (/api/embeddings).
 Reads model configuration from environment variables and validates model
-availability at startup.
+availability at startup. Supports Redis-backed embedding caching.
 """
 
+import hashlib
+import json
 import logging
 import os
 
@@ -14,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 FALLBACK_LLM_ORDER = ["llama3.2", "llama3.1:8b", "mistral", "qwen2:7b"]
 FALLBACK_EMBED_ORDER = ["nomic-embed-text", "mxbai-embed-large", "all-minilm"]
+
+EMBED_CACHE_TTL = 86400  # 24 hours
 
 
 class OllamaClient:
@@ -29,6 +33,11 @@ class OllamaClient:
         self.llm_model = llm_model or os.getenv("OLLAMA_LLM_MODEL", "llama3.2")
         self.embed_model = embed_model or os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
         self._client: httpx.AsyncClient | None = None
+        self._redis = None  # Set via set_cache()
+
+    def set_cache(self, redis_client) -> None:
+        """Attach a Redis client for embedding caching."""
+        self._redis = redis_client
 
     async def start(self) -> None:
         """Create the HTTP client and validate models."""
@@ -66,14 +75,22 @@ class OllamaClient:
 
     async def embed(self, text: str) -> list[float]:
         """Generate an embedding vector for the given text."""
+        cache_key = self._embed_cache_key(text)
+        cached = await self._get_cached_embedding(cache_key)
+        if cached is not None:
+            return cached
+
         payload = {"model": self.embed_model, "prompt": text}
         response = await self.client.post("/api/embeddings", json=payload)
         response.raise_for_status()
-        return response.json().get("embedding", [])
+        embedding = response.json().get("embedding", [])
+
+        await self._set_cached_embedding(cache_key, embedding)
+        return embedding
 
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        """Generate embeddings for multiple texts sequentially."""
-        results = []
+        """Generate embeddings for multiple texts, using cache where possible."""
+        results: list[list[float]] = []
         for text in texts:
             vec = await self.embed(text)
             results.append(vec)
@@ -93,17 +110,14 @@ class OllamaClient:
             logger.warning("Cannot reach Ollama to validate models: %s", e)
             return preferred
 
-        # Check exact match
         if preferred in available:
             return preferred
 
-        # Check if the preferred model matches without tag (e.g. "llama3.2" matches "llama3.2:latest")
         for name in available:
             if name.split(":")[0] == preferred.split(":")[0]:
                 logger.info("Resolved '%s' to '%s'", preferred, name)
                 return name
 
-        # Try fallbacks
         for fallback in fallback_order:
             for name in available:
                 if name.split(":")[0] == fallback.split(":")[0]:
@@ -117,3 +131,31 @@ class OllamaClient:
             fallback_order[0],
         )
         return preferred
+
+    # ── Embedding cache helpers ──
+
+    def _embed_cache_key(self, text: str) -> str:
+        """Generate a cache key for an embedding based on content hash."""
+        content_hash = hashlib.sha256(text.encode()).hexdigest()[:16]
+        return f"embed:{self.embed_model}:{content_hash}"
+
+    async def _get_cached_embedding(self, key: str) -> list[float] | None:
+        """Retrieve a cached embedding from Redis."""
+        if not self._redis:
+            return None
+        try:
+            raw = await self._redis.get(key)
+            if raw:
+                return json.loads(raw)
+        except Exception:
+            pass
+        return None
+
+    async def _set_cached_embedding(self, key: str, embedding: list[float]) -> None:
+        """Store an embedding in Redis with TTL."""
+        if not self._redis or not embedding:
+            return
+        try:
+            await self._redis.set(key, json.dumps(embedding), ex=EMBED_CACHE_TTL)
+        except Exception:
+            pass

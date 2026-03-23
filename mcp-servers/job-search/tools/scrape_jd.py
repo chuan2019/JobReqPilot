@@ -76,12 +76,33 @@ def register_tools(server: FastMCP) -> None:
         return json.dumps(list(results))
 
 
-async def _scrape_single(url: str) -> dict:
-    """Fetch and parse a single job posting URL."""
-    # Validate URL
+def _is_safe_url(url: str) -> tuple[bool, str]:
+    """Validate URL to prevent SSRF attacks against internal services."""
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
-        return {"url": url, "jd_text": "", "error": "Invalid URL scheme"}
+        return False, "Invalid URL scheme"
+    hostname = parsed.hostname or ""
+    # Block internal/private hostnames
+    blocked = ("localhost", "127.0.0.1", "0.0.0.0", "::1", "metadata.google",
+               "169.254.169.254")
+    if hostname in blocked or hostname.endswith(".internal") or hostname.endswith(".local"):
+        return False, "Internal URLs are not allowed"
+    # Block private IP ranges
+    try:
+        import ipaddress
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_private or ip.is_loopback or ip.is_link_local:
+            return False, "Private IP addresses are not allowed"
+    except ValueError:
+        pass  # hostname is not an IP, that's fine
+    return True, ""
+
+
+async def _scrape_single(url: str) -> dict:
+    """Fetch and parse a single job posting URL."""
+    safe, reason = _is_safe_url(url)
+    if not safe:
+        return {"url": url, "jd_text": "", "error": reason}
 
     try:
         async with httpx.AsyncClient(
