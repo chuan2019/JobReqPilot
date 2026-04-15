@@ -24,22 +24,20 @@ open http://localhost:3000
 
 ## Architecture
 
-```
-┌──────────────┐    ┌──────────────┐    ┌────────────────────┐
-│   Frontend   │───▶│   Backend    │───▶│  MCP Job Search    │
-│  React + TS  │    │   FastAPI    │    │  (Tavily + Scrape) │
-│  :3000       │    │  :8000       │    │  :8001             │
-└──────────────┘    │              │    └────────────────────┘
-                    │              │───▶┌────────────────────┐
-                    │              │    │  MCP Summarize     │
-                    │              │    │  (Aggregate + LLM) │
-                    └──────┬───────┘    │  :8002             │
-                           │           └────────────────────┘
-                    ┌──────┴───────┐
-                    │   Ollama     │    ┌──────────────┐
-                    │  LLM + Embed │    │    Redis     │
-                    │  :11434      │    │    :6379     │
-                    └──────────────┘    └──────────────┘
+```mermaid
+flowchart LR
+       FE[Frontend\nReact + TS\n:3000]
+       BE[Backend\nFastAPI\n:8000]
+       JS[MCP Job Search\nTavily + Scrape\n:8001]
+       SUM[MCP Summarize\nAggregate + LLM\n:8002]
+       OLLAMA[Ollama\nLLM + Embed\n:11434]
+       REDIS[Redis\n:6379]
+
+       FE --> BE
+       BE --> JS
+       BE --> SUM
+       BE --> OLLAMA
+       BE --> REDIS
 ```
 
 ## Services
