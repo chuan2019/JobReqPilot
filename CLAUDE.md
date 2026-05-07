@@ -27,13 +27,13 @@ docker compose exec ollama ollama pull nomic-embed-text
 cd frontend && npm test
 
 # MCP server — job-search
-cd mcp-servers/job-search && uv run pytest tests/ -v
+cd mcp-servers/job-search && uv sync --extra dev && uv run pytest tests/ -v
 
 # MCP server — summarize
-cd mcp-servers/summarize && uv run pytest tests/ -v
+cd mcp-servers/summarize && uv sync --extra dev && uv run pytest tests/ -v
 
 # Run a single test file
-cd mcp-servers/job-search && uv run pytest tests/test_build_query.py -v
+cd mcp-servers/job-search && uv sync --extra dev && uv run pytest tests/test_build_query.py -v
 ```
 
 ### Frontend type-check
@@ -43,9 +43,9 @@ cd frontend && npx tsc --noEmit
 
 ### Install Python dependencies (per service, using uv)
 ```bash
-cd backend && uv sync
-cd mcp-servers/job-search && uv sync
-cd mcp-servers/summarize && uv sync
+cd backend && uv sync --extra dev
+cd mcp-servers/job-search && uv sync --extra dev
+cd mcp-servers/summarize && uv sync --extra dev
 ```
 
 ## Architecture
